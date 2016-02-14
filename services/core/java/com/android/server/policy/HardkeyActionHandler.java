@@ -36,12 +36,26 @@ import com.android.internal.util.hwkeys.Config;
 import com.android.internal.util.hwkeys.Config.ActionConfig;
 import com.android.internal.util.hwkeys.Config.ButtonConfig;
 
+import static android.view.WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG;
+
+import java.util.ArrayList;
+
+import com.android.internal.utils.ActionConstants;
+import com.android.internal.utils.ActionHandler;
+import com.android.internal.utils.ActionUtils;
+import com.android.internal.utils.Config;
+import com.android.internal.utils.Config.ActionConfig;
+import com.android.internal.utils.Config.ButtonConfig;
+
+import android.app.ActivityManagerNative;
+import android.app.IActivityManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
 import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.telecom.TelecomManager;
@@ -50,6 +64,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
+
 import com.android.server.policy.WindowManagerPolicy.WindowState;
 
 public class HardkeyActionHandler {
@@ -109,12 +124,14 @@ public class HardkeyActionHandler {
     private Handler mHandler;
 //    private PowerManager mPm;
     private Context mContext;
+    private IActivityManager mActivityManager;
 
     public HardkeyActionHandler(Context context, Handler handler) {
         mContext = context;
         mHandler = handler;
 //        mPm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
 
+        mActivityManager = ActivityManagerNative.getDefault();
         mDeviceHardwareKeys = ActionUtils.getInt(context, "config_deviceHardwareKeys",
                 ActionUtils.PACKAGE_ANDROID);
 
@@ -206,6 +223,12 @@ public class HardkeyActionHandler {
                     // NOTE: if somehow we ever get here, send it back and let the event
                     // pass through to AOSP handling. Which, in this case, does the same
                     // thing we just did.
+            WindowManager.LayoutParams attrs = win != null ? win.getAttrs() : null;
+            if (attrs != null) {
+                final int type = attrs.type;
+                if (type == TYPE_KEYGUARD_DIALOG
+                        || (attrs.privateFlags & PRIVATE_FLAG_KEYGUARD) != 0) {
+                    // the "app" is keyguard, so give it the key
                     return false;
                 }
                 final int typeCount = WINDOW_TYPES_WHERE_HOME_DOESNT_WORK.length;
@@ -216,7 +239,6 @@ public class HardkeyActionHandler {
                     }
                 }
             }
-
 
             if (!down) {
                 return true;
@@ -490,6 +512,11 @@ public class HardkeyActionHandler {
                         mBackButton.setWasConsumed(true);
                     } else {
 */
+                    if (isInLockTaskMode()) {
+                        stopSystemLockTaskMode();
+                        mHandler.sendEmptyMessage(MSG_DO_HAPTIC_FB);
+                        mBackButton.setWasConsumed(true);
+                    } else {
                         if (mBackButton.isLongTapEnabled()) {
                             if (!mBackButton.keyHasLongPressRecents()) {
                                 ActionHandler.cancelPreloadRecentApps();
@@ -499,11 +526,27 @@ public class HardkeyActionHandler {
                             mBackButton.setWasConsumed(true);
                         }
 //                    }
+                    }
                 }
             }
             return true;
         }
         return false;
+    }
+
+    private boolean isInLockTaskMode() {
+        try {
+            return mActivityManager.isInLockTaskMode();
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
+    private void stopSystemLockTaskMode() {
+        try {
+            mActivityManager.stopSystemLockTaskMode();
+        } catch (RemoteException e) {
+        }
     }
 
     private class HardKeyButton {
