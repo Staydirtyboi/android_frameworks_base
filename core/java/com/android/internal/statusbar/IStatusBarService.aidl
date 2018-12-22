@@ -107,9 +107,4 @@ interface IStatusBarService
      */
     void toggleCameraFlash();
     void leftInLandscapeChanged(boolean isLeft);
-    void toggleRecentApps();
-    void toggleSplitScreen();
-    void preloadRecentApps();
-    void cancelPreloadRecentApps();
-    void startAssist(in Bundle args);
 }
